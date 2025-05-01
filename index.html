@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ContainCoin - Web3 Content Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.ethers.io/lib/ethers-5.2.umd.min.js" type="application/javascript"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #f8fafc;
+        }
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 3px solid #3498db;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            display: none;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <nav class="bg-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex">
+                    <div class="flex-shrink-0 flex items-center">
+                        <h1 class="text-2xl font-bold text-blue-600">ContainCoin</h1>
+                    </div>
+                </div>
+                <div class="flex items-center">
+                    <button id="connectWallet" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
+                        Connect Wallet
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <!-- Dashboard Section -->
+            <div class="bg-white p-6 rounded-xl shadow-md">
+                <h2 class="text-xl font-semibold mb-4">Your Dashboard</h2>
+                <div class="space-y-4">
+                    <div class="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
+                        <span>ContainCoin Balance</span>
+                        <span id="tokenBalance" class="font-semibold">0 CCN</span>
+                    </div>
+                    <div class="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
+                        <span>Content Posted</span>
+                        <span id="contentCount" class="font-semibold">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Content Upload Section -->
+            <div class="bg-white p-6 rounded-xl shadow-md">
+                <h2 class="text-xl font-semibold mb-4">Upload Content</h2>
+                <form id="uploadForm" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Content Title</label>
+                        <input type="text" id="contentTitle" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Content</label>
+                        <textarea id="contentBody" rows="4" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" required></textarea>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
+                            Upload Content
+                        </button>
+                        <div id="uploadLoader" class="loader"></div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Content Feed Section -->
+        <div class="mt-8 bg-white p-6 rounded-xl shadow-md">
+            <h2 class="text-xl font-semibold mb-4">Trending Content</h2>
+            <div id="contentFeed" class="space-y-4">
+                <!-- Content will be dynamically populated here -->
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let userAccount = null;
+        const MONGODB_APP_SLUG = 'containcoin-123456';
+
+        async function connectWallet() {
+            try {
+                if (typeof window.ethereum !== 'undefined') {
+                    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+                    userAccount = accounts[0];
+                    document.getElementById('connectWallet').textContent = userAccount.slice(0, 6) + '...' + userAccount.slice(-4);
+                    loadUserData();
+                } else {
+                    alert('Please install MetaMask to use this application!');
+                }
+            } catch (error) {
+                console.error('Error connecting wallet:', error);
+            }
+        }
+
+        async function loadUserData() {
+            if (!userAccount) return;
+
+            try {
+                const response = await fetch('https://r0c8kgwocscg8gsokogwwsw4.zetaverse.one/mongodb', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer Pk4huFDQrLM6BIFeVfc8R3bt1FT2',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        appSlug: MONGODB_APP_SLUG,
+                        action: 'read',
+                        collection: 'content',
+                        conditions: {
+                            creator: userAccount
+                        }
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('contentCount').textContent = data.result.length;
+                    loadContentFeed();
+                }
+            } catch (error) {
+                console.error('Error loading user data:', error);
+            }
+        }
+
+        async function uploadContent(event) {
+            event.preventDefault();
+            if (!userAccount) {
+                alert('Please connect your wallet first!');
+                return;
+            }
+
+            const title = document.getElementById('contentTitle').value;
+            const content = document.getElementById('contentBody').value;
+            
+            document.getElementById('uploadLoader').style.display = 'block';
+
+            try {
+                const response = await fetch('https://r0c8kgwocscg8gsokogwwsw4.zetaverse.one/mongodb', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer Pk4huFDQrLM6BIFeVfc8R3bt1FT2',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        appSlug: MONGODB_APP_SLUG,
+                        action: 'create',
+                        collection: 'content',
+                        data: {
+                            title,
+                            content,
+                            creator: userAccount,
+                            timestamp: new Date().toISOString(),
+                            likes: 0
+                        }
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('uploadForm').reset();
+                    loadUserData();
+                    loadContentFeed();
+                }
+            } catch (error) {
+                console.error('Error uploading content:', error);
+            } finally {
+                document.getElementById('uploadLoader').style.display = 'none';
+            }
+        }
+
+        async function loadContentFeed() {
+            try {
+                const response = await fetch('https://r0c8kgwocscg8gsokogwwsw4.zetaverse.one/mongodb', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer Pk4huFDQrLM6BIFeVfc8R3bt1FT2',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        appSlug: MONGODB_APP_SLUG,
+                        action: 'read',
+                        collection: 'content'
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    const contentFeed = document.getElementById('contentFeed');
+                    contentFeed.innerHTML = '';
+                    
+                    data.result.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).forEach(item => {
+                        const contentCard = document.createElement('div');
+                        contentCard.className = 'bg-gray-50 p-4 rounded-lg';
+                        contentCard.innerHTML = `
+                            <h3 class="font-semibold text-lg">${item.title}</h3>
+                            <p class="text-gray-600 mt-2">${item.content}</p>
+                            <div class="flex justify-between items-center mt-4">
+                                <span class="text-sm text-gray-500">By ${item.creator.slice(0, 6)}...${item.creator.slice(-4)}</span>
+                                <button class="flex items-center space-x-1 text-blue-600" onclick="likeContent('${item._id}')">
+                                    <i class="bi bi-heart"></i>
+                                    <span>${item.likes || 0}</span>
+                                </button>
+                            </div>
+                        `;
+                        contentFeed.appendChild(contentCard);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading content feed:', error);
+            }
+        }
+
+        async function likeContent(contentId) {
+            if (!userAccount) {
+                alert('Please connect your wallet first!');
+                return;
+            }
+
+            try {
+                const response = await fetch('https://r0c8kgwocscg8gsokogwwsw4.zetaverse.one/mongodb', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer Pk4huFDQrLM6BIFeVfc8R3bt1FT2',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        appSlug: MONGODB_APP_SLUG,
+                        action: 'update',
+                        collection: 'content',
+                        id: contentId,
+                        data: {
+                            $inc: { likes: 1 }
+                        }
+                    })
+                });
+
+                if (response.ok) {
+                    loadContentFeed();
+                }
+            } catch (error) {
+                console.error('Error liking content:', error);
+            }
+        }
+
+        document.getElementById('connectWallet').addEventListener('click', connectWallet);
+        document.getElementById('uploadForm').addEventListener('submit', uploadContent);
+        
+        // Initial load
+        loadContentFeed();
+    </script>
+<script>document.body.addEventListener('wheel', e => { if (!e.ctrlKey) return; e.preventDefault(); return }, { passive: false })</script>
+	</body>
+</html>
